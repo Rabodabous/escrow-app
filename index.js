@@ -19,11 +19,16 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL,
   }
 });
 async function createTable() {
+await pool.query('DROP TABLE IF EXISTS refresh_tokens');
+  await pool.query('DROP TABLE IF EXISTS users');
+
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
+    CREATE TABLE users (
+      id UUID PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT,
+      phone TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
