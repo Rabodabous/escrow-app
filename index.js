@@ -13,7 +13,11 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access_secret_dev';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh_secret_dev';
