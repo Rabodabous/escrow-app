@@ -19,11 +19,9 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL,
   }
 });
 async function createTable() {
-await pool.query('DROP TABLE IF EXISTS refresh_tokens');
-  await pool.query('DROP TABLE IF EXISTS users');
 
   await pool.query(`
-    CREATE TABLE users (
+    CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
@@ -32,10 +30,81 @@ await pool.query('DROP TABLE IF EXISTS refresh_tokens');
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
-  console.log("Users table ready");
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id SERIAL PRIMARY KEY,
+      token TEXT NOT NULL,
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TIMESTAMP NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS listings (
+      id UUID PRIMARY KEY,
+      user_id UUID REFERENCES users(id),
+      title TEXT,
+      description TEXT,
+      price_cents INTEGER,
+      currency TEXT,
+      status TEXT
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS escrows (
+      id UUID PRIMARY KEY,
+      listing_id UUID REFERENCES listings(id),
+      buyer_id UUID REFERENCES users(id),
+      seller_id UUID REFERENCES users(id),
+      amount_cents INTEGER,
+      currency TEXT,
+      status TEXT,
+      gateway_hold_id TEXT,
+      funded_at TIMESTAMP,
+      released_at TIMESTAMP,
+      refunded_at TIMESTAMP,
+      buyer_confirmed BOOLEAN DEFAULT false,
+      seller_confirmed BOOLEAN DEFAULT false
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id UUID PRIMARY KEY,
+      escrow_id UUID REFERENCES escrows(id),
+      type TEXT,
+      amount_cents INTEGER,
+      provider_tx_id TEXT
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS disputes (
+      id UUID PRIMARY KEY,
+      escrow_id UUID REFERENCES escrows(id),
+      opened_by UUID REFERENCES users(id),
+      reason TEXT,
+      evidence TEXT,
+      status TEXT,
+      resolution TEXT
+    );
+  `);
+
+  console.log("All tables ready");
 }
 
-createTable();
+createTable()
+  .then(() => {
+    app.listen(PORT, () =>
+      console.log('Escrow backend running on port', PORT)
+    );
+  })
+  .catch(err => {
+    console.error('Error creating tables:', err);
+    process.exit(1);
+  });
 
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access_secret_dev';
@@ -238,5 +307,3 @@ app.get('/escrows', authMiddleware, async (req,res) => {
 });
 
 app.get('/_health', (req,res) => res.json({ok:true, now: new Date()}));
-
-app.listen(PORT, () => console.log('Escrow backend running on port', PORT));
