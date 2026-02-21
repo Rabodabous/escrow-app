@@ -279,6 +279,11 @@ app.get('/me', authMiddleware, async (req, res) => {
   });
 });
 
+app.get('/debug/users', async (_, res) => {
+  const r = await query('SELECT id,email,name FROM users');
+  res.json(r.rows);
+});
+
 /* ===============================
    HEALTH CHECK
 ================================ */
