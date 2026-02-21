@@ -269,6 +269,17 @@ app.get('/listings', async (_, res) => {
 });
 
 /* ===============================
+   CURRENT USER (TEST AUTH)
+================================ */
+
+app.get('/me', authMiddleware, async (req, res) => {
+  res.json({
+    message: 'Usuário autenticado ✅',
+    user: req.user
+  });
+});
+
+/* ===============================
    HEALTH CHECK
 ================================ */
 
