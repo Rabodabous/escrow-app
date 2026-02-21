@@ -70,46 +70,6 @@ async function createTable() {
     );
   `);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS escrows (
-      id UUID PRIMARY KEY,
-      listing_id UUID REFERENCES listings(id),
-      buyer_id UUID REFERENCES users(id),
-      seller_id UUID REFERENCES users(id),
-      amount_cents INTEGER,
-      currency TEXT,
-      status TEXT,
-      gateway_hold_id TEXT,
-      funded_at TIMESTAMP,
-      released_at TIMESTAMP,
-      refunded_at TIMESTAMP,
-      buyer_confirmed BOOLEAN DEFAULT false,
-      seller_confirmed BOOLEAN DEFAULT false
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id UUID PRIMARY KEY,
-      escrow_id UUID REFERENCES escrows(id),
-      type TEXT,
-      amount_cents INTEGER,
-      provider_tx_id TEXT
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS disputes (
-      id UUID PRIMARY KEY,
-      escrow_id UUID REFERENCES escrows(id),
-      opened_by UUID REFERENCES users(id),
-      reason TEXT,
-      evidence TEXT,
-      status TEXT,
-      resolution TEXT
-    );
-  `);
-
   console.log("All tables ready");
 }
 
@@ -128,11 +88,15 @@ const REFRESH_SECRET =
 ================================ */
 
 async function authMiddleware(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: 'no_auth' });
+
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer '))
+    return res.status(401).json({ error: 'missing_token' });
 
   try {
-    const token = auth.replace('Bearer ', '');
+    const token = authHeader.split(' ')[1];
+
     const payload = jwt.verify(token, ACCESS_SECRET);
 
     const r = await query(
@@ -144,9 +108,11 @@ async function authMiddleware(req, res, next) {
       return res.status(401).json({ error: 'invalid_user' });
 
     req.user = r.rows[0];
+
     next();
-  } catch {
-    res.status(401).json({ error: 'invalid_token' });
+
+  } catch (err) {
+    return res.status(401).json({ error: 'invalid_token' });
   }
 }
 
@@ -154,7 +120,9 @@ async function authMiddleware(req, res, next) {
    AUTH ROUTES
 ================================ */
 
+// SIGNUP
 app.post('/auth/signup', async (req, res) => {
+
   const { email, password, name, phone } = req.body;
 
   if (!email || !password)
@@ -187,11 +155,21 @@ app.post('/auth/signup', async (req, res) => {
     [refreshToken, id, exp]
   );
 
-  res.json({ accessToken, refreshToken, user: { id, email, name } });
+  res.json({
+    accessToken,
+    refreshToken,
+    user: { id, email, name }
+  });
 });
 
+
+// LOGIN ✅
 app.post('/auth/login', async (req, res) => {
+
   const { email, password } = req.body;
+
+  if (!email || !password)
+    return res.status(400).json({ error: 'email_password_required' });
 
   const r = await query(
     'SELECT * FROM users WHERE email=$1',
@@ -203,9 +181,10 @@ app.post('/auth/login', async (req, res) => {
 
   const user = r.rows[0];
 
-  const ok = await bcrypt.compare(password, user.password_hash);
+  const validPassword =
+    await bcrypt.compare(password, user.password_hash);
 
-  if (!ok)
+  if (!validPassword)
     return res.status(401).json({ error: 'invalid_credentials' });
 
   const accessToken = jwt.sign(
@@ -239,10 +218,22 @@ app.post('/auth/login', async (req, res) => {
 });
 
 /* ===============================
+   PROTECTED TEST ROUTE 🔐
+================================ */
+
+app.get('/me', authMiddleware, async (req, res) => {
+  res.json({
+    message: "Authenticated user",
+    user: req.user
+  });
+});
+
+/* ===============================
    LISTINGS
 ================================ */
 
 app.post('/listings', authMiddleware, async (req, res) => {
+
   const { title, description, price_cents, currency } = req.body;
 
   const id = uuidv4();
@@ -261,7 +252,10 @@ app.post('/listings', authMiddleware, async (req, res) => {
     ]
   );
 
-  const r = await query('SELECT * FROM listings WHERE id=$1', [id]);
+  const r = await query(
+    'SELECT * FROM listings WHERE id=$1',
+    [id]
+  );
 
   res.json(r.rows[0]);
 });
@@ -283,7 +277,7 @@ app.get('/_health', (_, res) =>
 );
 
 /* ===============================
-   START SERVER (CORRETO)
+   START SERVER
 ================================ */
 
 async function startServer() {
